@@ -1155,6 +1155,9 @@ pub trait PdfiumLibraryBindings {
     fn FPDFAnnot_SetURI(&self, annot: FPDF_ANNOTATION, uri: &str) -> FPDF_BOOL;
 
     #[allow(non_snake_case)]
+    fn FPDFAnnot_SetDest(&self, annot: FPDF_ANNOTATION, page_dest: FPDF_PAGE, x: FS_FLOAT, y: FS_FLOAT, z: FS_FLOAT) -> FPDF_BOOL;
+    
+    #[allow(non_snake_case)]
     fn FPDFDOC_InitFormFillEnvironment(
         &self,
         document: FPDF_DOCUMENT,
