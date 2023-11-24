@@ -16,7 +16,7 @@ use crate::page_annotation_strikeout::PdfPageStrikeoutAnnotation;
 use crate::page_annotation_text::PdfPageTextAnnotation;
 use crate::page_annotation_underline::PdfPageUnderlineAnnotation;
 use crate::page_object::{PdfPageObject, PdfPageObjectCommon};
-use crate::prelude::{PdfPageHighlightAnnotation, PdfPageInkAnnotation, PdfPageLinkAnnotation};
+use crate::prelude::{PdfPageHighlightAnnotation, PdfPageInkAnnotation, PdfPageLinkAnnotation, PdfPage, PdfPoints};
 use crate::quad_points::PdfQuadPoints;
 use chrono::prelude::*;
 use std::ops::Range;
@@ -269,6 +269,29 @@ impl<'a> PdfPageAnnotations<'a> {
         )?;
 
         annotation.set_link(uri)?;
+
+        Ok(annotation)
+    }
+
+    /// Creates a new [PdfPageLinkAnnotation] with the given Dest in this [PdfPageAnnotations]
+    /// collection, returning the newly created annotation.
+    ///
+    /// If the containing `PdfPage` has a content regeneration strategy of
+    /// `PdfPageContentRegenerationStrategy::AutomaticOnEveryChange` then content regeneration
+    /// will be triggered on the page.
+    pub fn create_dest_annotation(
+        &mut self,
+        dest: &PdfPage,
+        x: PdfPoints,
+        y: PdfPoints,
+        z: PdfPoints
+    ) -> Result<PdfPageLinkAnnotation<'a>, PdfiumError> {
+        let mut annotation = self.create_annotation(
+            PdfPageAnnotationType::Link,
+            PdfPageLinkAnnotation::from_pdfium,
+        )?;
+
+        annotation.set_dest(dest, x, y, z)?;
 
         Ok(annotation)
     }
