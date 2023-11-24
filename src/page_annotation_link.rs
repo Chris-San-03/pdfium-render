@@ -9,6 +9,7 @@ use crate::page_annotation_attachment_points::PdfPageAnnotationAttachmentPoints;
 use crate::page_annotation_objects::PdfPageAnnotationObjects;
 use crate::page_annotation_private::internal::PdfPageAnnotationPrivate;
 use crate::page_objects_private::internal::PdfPageObjectsPrivate;
+use crate::points::PdfPoints;
 
 /// A single `PdfPageAnnotation` of type `PdfPageAnnotationType::Link`.
 pub struct PdfPageLinkAnnotation<'a> {
@@ -63,6 +64,19 @@ impl<'a> PdfPageLinkAnnotation<'a> {
         if self
             .bindings()
             .is_true(self.bindings().FPDFAnnot_SetURI(self.handle, uri))
+        {
+            Ok(())
+        } else {
+            Err(PdfiumError::PdfiumLibraryInternalError(
+                PdfiumInternalError::Unknown,
+            ))
+        }
+    }
+
+    pub fn set_dest(&mut self, page_dest: &super::page::PdfPage, x: PdfPoints, y: PdfPoints, z: PdfPoints) -> Result<(), PdfiumError> {
+        if self
+            .bindings()
+            .is_true(self.bindings().FPDFAnnot_SetDest(self.handle, page_dest.page_handle(), x.value, y.value, z.value))
         {
             Ok(())
         } else {
