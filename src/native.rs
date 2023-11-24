@@ -168,6 +168,7 @@ impl DynamicPdfiumBindings {
         result.extern_FPDFAnnot_GetFormControlIndex()?;
         result.extern_FPDFAnnot_GetFormFieldExportValue()?;
         result.extern_FPDFAnnot_SetURI()?;
+        result.extern_FPDFAnnot_SetDest()?;
         result.extern_FPDFDOC_InitFormFillEnvironment()?;
         result.extern_FPDFDOC_ExitFormFillEnvironment()?;
         result.extern_FPDFDoc_GetPageMode()?;
@@ -2327,6 +2328,17 @@ impl DynamicPdfiumBindings {
         libloading::Error,
     > {
         unsafe { self.library.get(b"FPDFAnnot_SetURI\0") }
+    }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    fn extern_FPDFAnnot_SetDest(
+        &self,
+    ) -> Result<
+        Symbol<unsafe extern "C" fn(annot: FPDF_ANNOTATION, page_dest: FPDF_PAGE, x: FS_FLOAT, y: FS_FLOAT, z: FS_FLOAT) -> FPDF_BOOL>,
+        libloading::Error,
+    > {
+        unsafe { self.library.get(b"FPDFAnnot_SetDest\0") }
     }
 
     #[inline]
@@ -6184,6 +6196,12 @@ impl PdfiumLibraryBindings for DynamicPdfiumBindings {
         let c_uri = CString::new(uri).unwrap();
 
         unsafe { self.extern_FPDFAnnot_SetURI().unwrap()(annot, c_uri.as_ptr()) }
+    }
+
+    #[inline]
+    #[allow(non_snake_case)]
+    fn FPDFAnnot_SetDest(&self, annot: FPDF_ANNOTATION, page_dest: FPDF_PAGE, x: FS_FLOAT, y: FS_FLOAT, z: FS_FLOAT) -> FPDF_BOOL {
+        unsafe { self.extern_FPDFAnnot_SetDest().unwrap()(annot, page_dest, x, y, z) }
     }
 
     #[inline]
