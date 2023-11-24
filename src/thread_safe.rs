@@ -1494,6 +1494,12 @@ impl<T: PdfiumLibraryBindings> PdfiumLibraryBindings for ThreadSafePdfiumBinding
 
     #[inline]
     #[allow(non_snake_case)]
+    fn FPDFAnnot_SetDest(&self, annot: FPDF_ANNOTATION, page_dest: FPDF_PAGE, x: FS_FLOAT, y: FS_FLOAT, z: FS_FLOAT) -> FPDF_BOOL {
+        self.bindings.FPDFAnnot_SetDest(annot, page_dest, x, y, z)
+    }
+
+    #[inline]
+    #[allow(non_snake_case)]
     fn FPDFDOC_InitFormFillEnvironment(
         &self,
         document: FPDF_DOCUMENT,
