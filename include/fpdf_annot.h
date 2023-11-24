@@ -915,6 +915,22 @@ FPDFAnnot_GetFormFieldExportValue(FPDF_FORMHANDLE hHandle,
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetURI(FPDF_ANNOTATION annot,
                                                      const char* uri);
 
+// Experimental API.
+// Add a XYZ Destination to |annot|, overwriting the existing Destination, if any.
+//
+//   annot   - handle to a link annotation.
+//   dest    - handle to the Destination page.
+//   x       - left coordinate
+//   y       - top coordinate
+//   z       - zoom factor
+//
+// Returns true if successful.
+FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV FPDFAnnot_SetDest(FPDF_ANNOTATION annot,
+                                                      FPDF_PAGE page_dest,
+                                                      FS_FLOAT x,
+                                                      FS_FLOAT y,
+                                                      FS_FLOAT z);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
