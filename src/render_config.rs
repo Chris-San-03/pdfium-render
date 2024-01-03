@@ -50,6 +50,7 @@ impl PdfBitmapConfig {
     )]
     #[inline]
     #[doc(hidden)]
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> PdfRenderConfig {
         PdfRenderConfig::default()
     }
@@ -495,10 +496,12 @@ impl PdfRenderConfig {
     }
 
     /// Controls whether the byte order of generated image data should be reversed
-    /// during rendering. The default is `true`, so that Pdfium returns pixel data as RGB8
-    /// rather than its default BGR8. There should generally be no need to change this flag,
-    /// unless you want to do raw image processing and specifically need the pixel data returned
-    /// by the [PdfBitmap::as_bytes()] function to be in BGR8 format.
+    /// during rendering. The default is `true`, so that Pdfium returns pixel data as
+    /// four-channel RGBA rather than its default of four-channel BGRA.
+    ///
+    /// There should generally be no need to change this flag unless you want to do raw
+    /// image processing and specifically need the pixel data returned by the
+    /// [PdfBitmap::as_raw_bytes()] function to be in BGR8 format.
     #[inline]
     pub fn set_reverse_byte_order(mut self, do_set_flag: bool) -> Self {
         self.do_set_flag_reverse_byte_order = do_set_flag;
@@ -890,6 +893,7 @@ impl PdfRenderConfig {
                 }
             },
             render_flags: render_flags as c_int,
+            is_reversed_byte_order_flag_set: self.do_set_flag_reverse_byte_order,
         }
     }
 }
@@ -916,4 +920,5 @@ pub(crate) struct PdfRenderSettings {
     pub(crate) matrix: FS_MATRIX,
     pub(crate) clipping: FS_RECTF,
     pub(crate) render_flags: c_int,
+    pub(crate) is_reversed_byte_order_flag_set: bool,
 }

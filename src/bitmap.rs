@@ -6,15 +6,18 @@ use crate::bindgen::{
 };
 use crate::bindings::PdfiumLibraryBindings;
 use crate::error::{PdfiumError, PdfiumInternalError};
-#[cfg(feature = "image")]
-use crate::utils::pixels::{aligned_bgr_to_rgba, bgra_to_rgba};
+use crate::render_config::PdfRenderSettings;
+use crate::utils::pixels::aligned_rgb_to_rgba;
 use std::os::raw::c_int;
-
-#[cfg(not(target_arch = "wasm32"))]
-use std::os::raw::c_void;
 
 #[cfg(feature = "image")]
 use image::{DynamicImage, GrayImage, RgbaImage};
+
+#[cfg(feature = "image")]
+use crate::utils::pixels::{aligned_bgr_to_rgba, bgra_to_rgba};
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::os::raw::c_void;
 
 #[cfg(target_arch = "wasm32")]
 use wasm_bindgen::{Clamped, JsValue};
@@ -103,6 +106,7 @@ impl Default for PdfBitmapFormat {
 /// A bitmap image with a specific width and height.
 pub struct PdfBitmap<'a> {
     handle: FPDF_BITMAP,
+    was_byte_order_reversed_during_rendering: bool,
     bindings: &'a dyn PdfiumLibraryBindings,
 }
 
@@ -112,7 +116,11 @@ impl<'a> PdfBitmap<'a> {
         handle: FPDF_BITMAP,
         bindings: &'a dyn PdfiumLibraryBindings,
     ) -> Self {
-        PdfBitmap { handle, bindings }
+        PdfBitmap {
+            handle,
+            was_byte_order_reversed_during_rendering: false,
+            bindings,
+        }
     }
 
     /// Creates an empty [PdfBitmap] with a buffer capable of storing an image of the given
@@ -181,6 +189,15 @@ impl<'a> PdfBitmap<'a> {
         &self.handle
     }
 
+    /// Lets this [PdfBitmap] know whether it was created from a rendering configuration
+    /// that instructed Pdfium to reverse the byte order of generated image data from its
+    /// default of BGR8 to RGB8. The setting of this flag determines the color channel
+    /// normalization strategy used by [PdfBitmap::as_rgba_bytes()].
+    #[inline]
+    pub(crate) fn set_byte_order_from_render_settings(&mut self, settings: &PdfRenderSettings) {
+        self.was_byte_order_reversed_during_rendering = settings.is_reversed_byte_order_flag_set
+    }
+
     /// Returns the [PdfiumLibraryBindings] used by this [PdfBitmap].
     #[inline]
     pub fn bindings(&self) -> &dyn PdfiumLibraryBindings {
@@ -205,8 +222,26 @@ impl<'a> PdfBitmap<'a> {
         PdfBitmapFormat::from_pdfium(self.bindings.FPDFBitmap_GetFormat(self.handle) as u32)
     }
 
+    // TODO: AJRC - 25/11/22 - remove deprecated PdfBitmap::as_bytes() function in 0.9.0
+    // as part of tracking issue https://github.com/ajrcarey/pdfium-render/issues/36
     /// Returns an immutable reference to the bitmap buffer backing this [PdfBitmap].
+    #[deprecated(
+        since = "0.8.16",
+        note = "This function has been renamed to better reflect its purpose. Use the PdfBitmap::as_raw_bytes() function instead."
+    )]
+    #[doc(hidden)]
+    #[inline]
     pub fn as_bytes(&self) -> &'a [u8] {
+        self.as_raw_bytes()
+    }
+
+    /// Returns an immutable reference to the bitmap buffer backing this [PdfBitmap].
+    ///
+    /// Unlike [PdfBitmap::as_rgba_bytes()], this function does not attempt any color channel normalization.
+    /// To adjust color channels in your own code, use the [PdfiumLibraryBindings::bgr_to_rgba()],
+    /// [PdfiumLibraryBindings::bgra_to_rgba()], [PdfiumLibraryBindings::rgb_to_bgra()],
+    /// and [PdfiumLibraryBindings::rgba_to_bgra()] functions.
+    pub fn as_raw_bytes(&self) -> &'a [u8] {
         let buffer_length = self.bindings.FPDFBitmap_GetStride(self.handle)
             * self.bindings.FPDFBitmap_GetHeight(self.handle);
 
@@ -215,39 +250,65 @@ impl<'a> PdfBitmap<'a> {
         unsafe { std::slice::from_raw_parts(buffer_start as *const u8, buffer_length as usize) }
     }
 
+    /// Returns an owned copy of the bitmap buffer backing this [PdfBitmap], normalizing all
+    /// color channels into RGBA irrespective of the original pixel format.
+    pub fn as_rgba_bytes(&self) -> Vec<u8> {
+        let bytes = self.as_raw_bytes();
+
+        let format = self.format().unwrap_or_default();
+
+        let width = self.width() as usize;
+
+        let stride = bytes.len() / self.height() as usize;
+
+        if self.was_byte_order_reversed_during_rendering {
+            // The R and B channels were swapped by Pdfium during rendering, as configured by
+            // a call to PdfRenderConfig::set_reverse_byte_order(true).
+
+            match format {
+                #[allow(deprecated)]
+                PdfBitmapFormat::BGRA | PdfBitmapFormat::BGRx | PdfBitmapFormat::BRGx => {
+                    // No color conversion necessary; data was already swapped from BGRx
+                    // to four-channel RGB during rendering.
+                    bytes.to_vec()
+                }
+                PdfBitmapFormat::BGR => aligned_rgb_to_rgba(bytes, width, stride),
+                PdfBitmapFormat::Gray => bytes.to_vec(),
+            }
+        } else {
+            match format {
+                #[allow(deprecated)]
+                PdfBitmapFormat::BGRA | PdfBitmapFormat::BRGx | PdfBitmapFormat::BGRx => {
+                    bgra_to_rgba(bytes)
+                }
+                PdfBitmapFormat::BGR => aligned_bgr_to_rgba(bytes, width, stride),
+                PdfBitmapFormat::Gray => bytes.to_vec(),
+            }
+        }
+    }
+
     /// Returns a new `Image::DynamicImage` created from the bitmap buffer backing this [PdfBitmap].
     ///
     /// This function is only available when this crate's `image` feature is enabled.
     #[cfg(feature = "image")]
     pub fn as_image(&self) -> DynamicImage {
-        let format = self.format().unwrap_or(PdfBitmapFormat::default());
+        let bytes = self.as_rgba_bytes();
 
-        match format {
+        let width = self.width() as u32;
+
+        let height = self.height() as u32;
+
+        match self.format().unwrap_or_default() {
             #[allow(deprecated)]
-            PdfBitmapFormat::BGRA | PdfBitmapFormat::BRGx | PdfBitmapFormat::BGRx => {
-                RgbaImage::from_raw(
-                    self.width() as u32,
-                    self.height() as u32,
-                    bgra_to_rgba(self.as_bytes()),
-                )
-                .map(DynamicImage::ImageRgba8)
+            PdfBitmapFormat::BGRA
+            | PdfBitmapFormat::BRGx
+            | PdfBitmapFormat::BGRx
+            | PdfBitmapFormat::BGR => {
+                RgbaImage::from_raw(width, height, bytes).map(DynamicImage::ImageRgba8)
             }
-            PdfBitmapFormat::BGR => RgbaImage::from_raw(
-                self.width() as u32,
-                self.height() as u32,
-                aligned_bgr_to_rgba(
-                    self.as_bytes(),
-                    self.width() as usize,
-                    self.as_bytes().len() / self.height() as usize,
-                ),
-            )
-            .map(DynamicImage::ImageRgba8),
-            PdfBitmapFormat::Gray => GrayImage::from_raw(
-                self.width() as u32,
-                self.height() as u32,
-                self.as_bytes().to_vec(),
-            )
-            .map(DynamicImage::ImageLuma8),
+            PdfBitmapFormat::Gray => {
+                GrayImage::from_raw(width, height, bytes).map(DynamicImage::ImageLuma8)
+            }
         }
         // TODO: AJRC - 3/11/23 - change function signature to return Result<DynamicImage, PdfiumError>
         // in 0.9.0 so we can account for any image conversion failure here. Tracked
@@ -275,11 +336,17 @@ impl<'a> PdfBitmap<'a> {
     /// this [PdfBitmap].
     ///
     /// This function avoids a memory allocation and copy required by both
-    /// [PdfBitmap::as_bytes()] and [PdfBitmap::as_image_data()], making it preferable for
+    /// [PdfBitmap::as_rgba_bytes()] and [PdfBitmap::as_image_data()], making it preferable for
     /// situations where performance is paramount.
+    ///
+    /// Unlike [PdfBitmap::as_rgba_bytes()], this function does not attempt any color channel normalization.
+    /// To adjust color channels in your own code, use the [PdfiumLibraryBindings::bgr_to_rgba()],
+    /// [PdfiumLibraryBindings::bgra_to_rgba()], [PdfiumLibraryBindings::rgb_to_bgra()],
+    /// and [PdfiumLibraryBindings::rgba_to_bgra()] functions.
     ///
     /// This function is only available when compiling to WASM.
     #[cfg(any(doc, target_arch = "wasm32"))]
+    #[inline]
     pub fn as_array(&self) -> Uint8Array {
         self.bindings.FPDFBitmap_GetArray(self.handle)
     }
@@ -296,9 +363,10 @@ impl<'a> PdfBitmap<'a> {
     ///
     /// This function is only available when compiling to WASM.
     #[cfg(any(doc, target_arch = "wasm32"))]
+    #[inline]
     pub fn as_image_data(&self) -> Result<ImageData, JsValue> {
         ImageData::new_with_u8_clamped_array_and_sh(
-            Clamped(self.as_bytes()),
+            Clamped(&self.as_rgba_bytes()),
             self.width() as u32,
             self.height() as u32,
         )

@@ -4,10 +4,7 @@ use rand::random;
 pub fn main() -> Result<(), PdfiumError> {
     // For general comments about pdfium-render and binding to Pdfium, see export.rs.
 
-    let pdfium = Pdfium::new(
-        Pdfium::bind_to_library(Pdfium::pdfium_platform_library_name_at_path("./"))
-            .or_else(|_| Pdfium::bind_to_system_library())?,
-    );
+    let pdfium = Pdfium::default();
 
     // A variety of objects provided by Pdfium can be transformed: positioned, rotated, scaled,
     // and skewed. All transformable objects provide convenient functions for doing so, but
@@ -116,7 +113,7 @@ pub fn main() -> Result<(), PdfiumError> {
         };
 
         object.set_blend_mode(PdfPageObjectBlendMode::Multiply)?;
-        object.set_matrix(matrix)?;
+        object.apply_matrix(matrix)?;
         page.objects_mut().add_path_object(object)?;
     }
 
